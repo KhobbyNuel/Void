@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Space": {
+      "title": "Space",
+      "description": "A private room for a group.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the space" },
+        "inviteCode": { "type": "string", "description": "6-character join code" },
+        "vibeMode": { "type": "string", "enum": ["open", "gated", "event"] },
+        "roomTemp": { "type": "string", "enum": ["chill", "spicy", "chaotic", "wholesome"] },
+        "adminMemberId": { "type": "string", "description": "UID of the creator" },
+        "maxMembers": { "type": "number" },
+        "cooldownMinutes": { "type": "number" },
+        "proTier": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "inviteCode", "vibeMode", "roomTemp", "adminMemberId", "createdAt"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "A participant in a space.",
+      "type": "object",
+      "properties": {
+        "spaceId": { "type": "string" },
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayAlias": { "type": "string" },
+        "joinedAt": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "flagCount": { "type": "number" }
+      },
+      "required": ["spaceId", "uid", "displayAlias", "joinedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "An anonymous message.",
+      "type": "object",
+      "properties": {
+        "spaceId": { "type": "string" },
+        "authorUid": { "type": "string", "description": "Hidden from other clients" },
+        "content": { "type": "string" },
+        "tag": { "type": "string", "enum": ["confession", "hot_take", "question", "rant", "appreciation", "poll"] },
+        "echoCount": { "type": "number" },
+        "isHidden": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["spaceId", "authorUid", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/spaces/{spaceId}": {
+      "schema": "Space",
+      "description": "Space metadata"
+    },
+    "/spaces/{spaceId}/members/{memberId}": {
+      "schema": "Member",
+      "description": "Members of a space"
+    },
+    "/spaces/{spaceId}/posts/{postId}": {
+      "schema": "Post",
+      "description": "Posts in a space"
+    }
+  }
+}

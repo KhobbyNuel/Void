@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: spaces
+    // Document ID: spaceId
+    // Fields:
+    //   - name: string (required, 1-80 chars)
+    //   - inviteCode: string (required, 6 chars)
+    //   - vibeMode: string (required, enum)
+    //   - roomTemp: string (required, enum)
+    //   - adminMemberId: string (required, UID)
+    //   - maxMembers: number (required)
+    //   - cooldownMinutes: number (required)
+    //   - proTier: bool (required)
+    //   - createdAt: number (required)
+    //
+    // Collection: spaces/{spaceId}/members
+    // Document ID: memberId (Auth UID)
+    // Fields:
+    //   - spaceId: string (required)
+    //   - uid: string (required, Auth UID)
+    //   - displayAlias: string (required, 1-20 chars)
+    //   - joinedAt: number (required)
+    //   - isAdmin: bool (required)
+    //   - flagCount: number (required)
+    //
+    // Collection: spaces/{spaceId}/posts
+    // Document ID: postId
+    // Fields:
+    //   - spaceId: string (required)
+    //   - authorUid: string (required, Auth UID)
+    //   - content: string (required, 1-1000 chars)
+    //   - tag: string (optional, enum)
+    //   - echoCount: number (required)
+    //   - isHidden: bool (required)
+    //   - isPinned: bool (required)
+    //   - createdAt: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isMember(spaceId) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/spaces/$(spaceId)/members/$(request.auth.uid));
+    }
+
+    function isAdmin(spaceId) {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/spaces/$(spaceId)/members/$(request.auth.uid)).data.isAdmin == true ||
+              (request.auth.token.email == "nuelgenfi2366@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isRecent(time) {
+      return time is number && time > (request.time.toMillis() - 3600000) && time < (request.time.toMillis() + 3600000);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidSpace(data) {
+      return hasOnlyAllowedFields(['name', 'inviteCode', 'vibeMode', 'roomTemp', 'adminMemberId', 'maxMembers', 'cooldownMinutes', 'proTier', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 80 &&
+             data.inviteCode is string && data.inviteCode.size() == 6 &&
+             data.vibeMode in ['open', 'gated', 'event'] &&
+             data.roomTemp in ['chill', 'spicy', 'chaotic', 'wholesome'] &&
+             data.adminMemberId == request.auth.uid &&
+             data.maxMembers is number &&
+             data.cooldownMinutes is number &&
+             data.proTier is bool &&
+             isRecent(data.createdAt);
+    }
+
+    function isValidMember(data, spaceId) {
+      return hasOnlyAllowedFields(['id', 'spaceId', 'uid', 'displayAlias', 'joinedAt', 'isAdmin', 'flagCount']) &&
+             data.spaceId == spaceId &&
+             data.uid == request.auth.uid &&
+             data.displayAlias is string && data.displayAlias.size() > 0 && data.displayAlias.size() <= 20 &&
+             data.isAdmin is bool &&
+             data.flagCount is number &&
+             isRecent(data.joinedAt);
+    }
+
+    function isValidPost(data, spaceId) {
+      return hasOnlyAllowedFields(['spaceId', 'authorUid', 'content', 'tag', 'echoCount', 'isHidden', 'isPinned', 'createdAt']) &&
+             data.spaceId == spaceId &&
+             data.authorUid == request.auth.uid &&
+             data.content is string && data.content.size() > 0 && data.content.size() <= 1000 &&
+             (data.tag == null || data.tag in ['confession', 'hot_take', 'question', 'rant', 'appreciation', 'poll']) &&
+             data.echoCount is number &&
+             data.isHidden is bool &&
+             data.isPinned is bool &&
+             isRecent(data.createdAt);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /spaces/{spaceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidSpace(request.resource.data);
+      allow update: if isAdmin(spaceId) && isValidSpace(request.resource.data);
+      
+      match /members/{memberId} {
+        allow read: if isMember(spaceId);
+        allow create: if isAuthenticated() && isValidMember(request.resource.data, spaceId) && memberId == request.auth.uid;
+        allow update: if isOwner(memberId) && isValidMember(request.resource.data, spaceId);
+      }
+
+      match /posts/{postId} {
+        allow read: if isMember(spaceId);
+        allow create: if isMember(spaceId) && isValidPost(request.resource.data, spaceId);
+        allow update: if (isMember(spaceId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['echoCount'])) ||
+                      isAdmin(spaceId);
+        allow delete: if isAdmin(spaceId);
+      }
+    }
+  }
+}
